@@ -1,5 +1,6 @@
 # BM25 implementation
 import math
+import json
 from collections import defaultdict
 import numpy as np
 
@@ -17,9 +18,19 @@ class BM25:
         self._precomputed_idf = {}
         self._precomputed_norms = None
 
-    def add_document(self, document):
-        self.documents.append(document)
-        terms = document.split()
+    def add_document(self, document_tokens):
+        # 如果是字串格式的 JSON，先解析成列表
+        if isinstance(document_tokens, str):
+            try:
+                terms = json.loads(document_tokens)
+            except json.JSONDecodeError:
+                # 如果不是 JSON 格式，就當作普通字串處理
+                terms = document_tokens.split()
+        else:
+            # 如果已經是列表，直接使用
+            terms = document_tokens
+            
+        self.documents.append(terms)
         self.doc_lengths.append(len(terms))
         self.num_docs += 1
         term_count = defaultdict(int)
@@ -47,13 +58,23 @@ class BM25:
             for doc_len in self.doc_lengths
         ])
     
-    def compute_similarity_batch(self, query):
+    def compute_similarity_batch(self, query_tokens):
         if not self._precomputed_idf:
             self._precompute_idf()
         if self._precomputed_norms is None:
             self._precompute_normalization_factors()
             
-        query_terms = query.split()
+        # 如果是字串格式的 JSON，先解析成列表
+        if isinstance(query_tokens, str):
+            try:
+                query_terms = json.loads(query_tokens)
+            except json.JSONDecodeError:
+                # 如果不是 JSON 格式，就當作普通字串處理
+                query_terms = query_tokens.split()
+        else:
+            # 如果已經是列表，直接使用
+            query_terms = query_tokens
+            
         similarities = np.zeros(self.num_docs)
         
         for doc_idx in range(self.num_docs):
@@ -73,8 +94,8 @@ class BM25:
 
         return similarities
 
-    def get_top_k_similar_documents(self, query, k):
-        similarities = self.compute_similarity_batch(query)
+    def get_top_k_similar_documents(self, query_tokens, k):
+        similarities = self.compute_similarity_batch(query_tokens)
 
         if k >= len(similarities):
             top_k_indices = np.argsort(similarities)[::-1]      

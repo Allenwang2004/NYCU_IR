@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import json
 from collections import defaultdict
 
 class TFIDF:
@@ -23,12 +24,23 @@ class TFIDF:
         self.tfidf_matrix = None
         self.vocab_to_idx = defaultdict(int)
 
-    def add_document(self, document):
-        self.documents.append(document)
+    def add_document(self, document_tokens):
+        # 如果是字串格式的 JSON，先解析成列表
+        if isinstance(document_tokens, str):
+            try:
+                tokens = json.loads(document_tokens)
+            except json.JSONDecodeError:
+                # 如果不是 JSON 格式，就當作普通字串處理
+                tokens = document_tokens.split()
+        else:
+            # 如果已經是列表，直接使用
+            tokens = document_tokens
+            
+        self.documents.append(tokens)
         self.num_docs += 1
         term_count = defaultdict(int)
 
-        for term in document.split():
+        for term in tokens:
             term_count[term] += 1
             self.vocabulary.add(term)
 
@@ -62,13 +74,24 @@ class TFIDF:
         
         return self.tfidf_matrix
 
-    def get_query_vector(self, query):
+    def get_query_vector(self, query_tokens):
         
         if self.tfidf_matrix is None:
             self.compute_tfidf()
         
+        # 如果是字串格式的 JSON，先解析成列表
+        if isinstance(query_tokens, str):
+            try:
+                tokens = json.loads(query_tokens)
+            except json.JSONDecodeError:
+                # 如果不是 JSON 格式，就當作普通字串處理
+                tokens = query_tokens.split()
+        else:
+            # 如果已經是列表，直接使用
+            tokens = query_tokens
+        
         query_term_count = defaultdict(int)
-        for term in query.split():
+        for term in tokens:
             query_term_count[term] += 1
 
         query_vector = np.zeros(len(self.vocabulary))
@@ -95,9 +118,9 @@ class TFIDF:
         
         return similarities
     
-    def get_top_k_similar_documents(self, query, k):
+    def get_top_k_similar_documents(self, query_tokens, k):
         
-        query_vector = self.get_query_vector(query)
+        query_vector = self.get_query_vector(query_tokens)
         similarities = self.compute_similarity_batch(query_vector)
         
         if k >= len(similarities):
