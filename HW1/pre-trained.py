@@ -1,86 +1,62 @@
-# Fine-tune a pre-trained model on a data/train_queries.csv which contains code snippets and their corresponding queries.
-import pandas as pd
-import argparse
+from transformers import AutoTokenizer, AutoModel
 import torch
-from transformers import RobertaTokenizer, RobertaForSequenceClassification, Trainer, TrainingArguments
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import normalize
+from tqdm import tqdm
+import ast
+import numpy as np
 
+model_name = "microsoft/codebert-base"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name)
 
-def load_data(queries_file, code_snippets_file):
-    queries_df = pd.read_csv(queries_file)
-    code_snippets_df = pd.read_csv(code_snippets_file,engine='python')
-    return queries_df, code_snippets_df
+out_codes_csv = "data/code_snippets_proc.csv"
+out_queries_csv = "data/test_queries_proc.csv"
 
+def tokens_to_ids_batch(batch_tokens, max_len, pad_token_id):
+    input_ids = []
+    attention_masks = []
 
-def preprocess_data(queries_df, code_snippets_df, tokenizer):
-    inputs = []
-    labels = []
-    for _, row in queries_df.iterrows():
-        query = row['query']
-        code_id = row['code_id']
-        code_snippet = code_snippets_df.loc[code_snippets_df['id'] == code_id, 'code'].values[0]
-        encoded_input = tokenizer(query, code_snippet, truncation=True, padding='max_length', max_length=512)
-        inputs.append(encoded_input)
-        labels.append(1)  # Assuming all pairs in training data are positive examples
-    return inputs, labels
+    for tokens in batch_tokens:
+        ids = tokenizer.convert_tokens_to_ids(tokens)
 
-def main(args):
-    # Load data
-    queries_df, code_snippets_df = load_data(args.queries_file, args.code_snippets_file)
+        ids = [tokenizer.cls_token_id] + ids + [tokenizer.sep_token_id]
 
-    # Load tokenizer and model
-    tokenizer = RobertaTokenizer.from_pretrained(args.model_name)
-    model = RobertaForSequenceClassification.from_pretrained(args.model_name, num_labels=2)
+        ids = ids[:max_len]
+        attn_mask = [1] * len(ids)
+        while len(ids) < max_len:
+            ids.append(pad_token_id)
+            attn_mask.append(0)
 
-    # Preprocess data
-    inputs, labels = preprocess_data(queries_df, code_snippets_df, tokenizer)
+        input_ids.append(ids)
+        attention_masks.append(attn_mask)
 
-    # Convert to torch dataset
-    class CodeQueryDataset(torch.utils.data.Dataset):
-        def __init__(self, inputs, labels):
-            self.inputs = inputs
-            self.labels = labels
+    return {
+        "input_ids": torch.tensor(input_ids),
+        "attention_mask": torch.tensor(attention_masks)
+    }
 
-        def __len__(self):
-            return len(self.labels)
+def encode_tokens_list(tokens_list, max_len=256, batch_size=32):
+    embeddings = []
+    pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id 
+    for i in tqdm(range(0, len(tokens_list), batch_size)):
+        batch_tokens = tokens_list[i:i+batch_size]
+        encoded_input = tokens_to_ids_batch(batch_tokens, max_len, pad_token_id)
+        print(encoded_input)
+        with torch.no_grad():
+            model_output = model(**encoded_input)
+        batch_embeddings = model_output.last_hidden_state[:, 0, :].cpu().numpy()
+        embeddings.append(batch_embeddings)
+    return np.vstack(embeddings)
 
-        def __getitem__(self, idx):
-            item = {key: torch.tensor(val[idx]) for key, val in self.inputs[idx].items()}
-            item['labels'] = torch.tensor(self.labels[idx])
-            return item
+code_snippets = pd.read_csv(out_codes_csv, engine="python")['code_tokens'].apply(ast.literal_eval).tolist()
+queries = pd.read_csv(out_queries_csv, engine="python")['query_tokens'].apply(ast.literal_eval).tolist()
 
-    dataset = CodeQueryDataset(inputs, labels)
+code_embeds = encode_tokens_list(code_snippets, max_len=256)
+query_embeds = encode_tokens_list(queries, max_len=128)
 
-    # Training arguments
-    training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.batch_size,
-        save_steps=10_000,
-        save_total_limit=2,
-    )
+code_embeds = normalize(code_embeds)
+query_embeds = normalize(query_embeds)
 
-    # Trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=dataset,
-    )
-
-    # Train model
-    trainer.train()
-
-    # Save model
-    model.save_pretrained(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fine-tune a pre-trained model on code-query pairs.")
-    parser.add_argument("--queries_file", type=str, required=True, help="Path to the CSV file containing queries.")
-    parser.add_argument("--code_snippets_file", type=str, required=True, help="Path to the CSV file containing code snippets.")
-    parser.add_argument("--model_name", type=str, default="microsoft/codebert-base", help="Pre-trained model name or path.")
-    parser.add_argument("--output_dir", type=str, default="./fine_tuned_model", help="Directory to save the fine-tuned model.")
-    parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, default=8, help="Training batch size.")
-    args = parser.parse_args()
-
-    main(args)
+similarity_matrix = cosine_similarity(query_embeds, code_embeds)
