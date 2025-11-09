@@ -222,5 +222,3 @@ The key to success lies in learning task-specific representations that capture b
 | Hybrid (BM25 + Re-rank) | Mixed | Very High | Medium |
 
 ---
-
-*Would you like me to add LaTeX equation numbering or figure placeholders for academic PDF export?*
