@@ -215,8 +215,87 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-/VLM
+# ==========================================================================
+# Project-specific: keep LARGE DATA and BINARY ARTIFACTS out of the repo
+# --------------------------------------------------------------------------
+# Rule of thumb: this repository tracks *code, configs and small CSV metadata*
+# only. Anything that can be re-downloaded (Kaggle data), re-generated
+# (checkpoints, embeddings, OCR caches) or is a heavyweight binary (videos,
+# model weights, virtualenvs) must stay untracked.
+# ==========================================================================
 
+# --- OS / editor junk -----------------------------------------------------
+.DS_Store
+**/.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Model checkpoints & serialized weights (100 MB - 1 GB each) ----------
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.h5
+*.msgpack
+*.joblib
+*.pkl
+*.npy
+*.npz
+fine_tuned_clip/
+**/checkpoints/
+**/best_model*
+
+# --- Hugging Face / torch / EasyOCR download caches -----------------------
+.cache/
+**/.cache/
+hf_cache/
+**/.EasyOCR/
+**/torch_home/
+
+# --- HW1: Code Search -----------------------------------------------------
+#   data/*.csv are small (~2.5 MB total) and ARE tracked on purpose so the
+#   sparse-retrieval pipeline is reproducible without Kaggle access.
+Codesearch/best_model.pth
+Codesearch/**/*.pt
+
+# --- HW2: Image Search (Kaggle competition data, ~740 MB) -----------------
+#   Re-download with:
+#   kaggle competitions download -c 2025-information-retrieval-extraction-homework-2
+/Imagesearch/data/
+/Imagesearch/**/*.zip
+/Imagesearch/**/train_images/
+/Imagesearch/**/test_images/
+/Imagesearch/**/*_papers_latex/
+
+# --- Lab: VLM video captioning --------------------------------------------
+#   Only vlm.py / capture.py are worth tracking; the venv, source videos and
+#   extracted frames (~877 MB) are not.
+/VLM/vlm_env/
+/VLM/img/
+/VLM/**/*.mp4
+
+# --- Media / raw assets ---------------------------------------------------
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.wav
+*.mp3
+
+# --- Course handouts & report PDFs ----------------------------------------
 *.pdf
 
-*.pth
+# --- Credentials ----------------------------------------------------------
+kaggle.json
+.kaggle/
+*.env
+
+# --- Generated submissions / scratch --------------------------------------
+submission.csv
+outputs/
+scratch/
+wandb/
